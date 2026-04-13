@@ -4,6 +4,7 @@ import { Session, Category, TimerState } from '../types';
 
 export function useSupabaseTimer(userId: string | undefined) {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [savedTasks, setSavedTasks] = useState<{ id: string; name: string; category: Category }[]>([]);
   const [timerState, setTimerState] = useState<TimerState>({
     isActive: false,
     isPaused: false,
@@ -16,6 +17,7 @@ export function useSupabaseTimer(userId: string | undefined) {
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch initial data
   useEffect(() => {
@@ -23,21 +25,37 @@ export function useSupabaseTimer(userId: string | undefined) {
 
     const fetchData = async () => {
       setLoading(true);
-      
-      // Fetch today's sessions
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      setError(null);
+      try {
+        // Fetch saved tasks
+        const { data: savedData, error: savedError } = await supabase
+          .from('saved_tasks')
+          .select('*')
+          .eq('user_id', userId)
+          .order('name', { ascending: true });
 
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from('time_entries')
-        .select('*')
-        .eq('user_id', userId)
-        .gte('start_time', today.toISOString())
-        .order('start_time', { ascending: false });
+        if (!savedError && savedData) {
+          setSavedTasks(savedData.map(d => ({
+            id: d.id,
+            name: d.name,
+            category: d.category as Category
+          })));
+        }
 
-      if (sessionsError) {
-        console.error('Error fetching sessions:', sessionsError);
-      } else {
+        // Fetch sessions from the last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+        const { data: sessionsData, error: sessionsError } = await supabase
+          .from('time_entries')
+          .select('*')
+          .eq('user_id', userId)
+          .gte('start_time', thirtyDaysAgo.toISOString())
+          .order('start_time', { ascending: false });
+
+        if (sessionsError) throw sessionsError;
+
         const formattedSessions: Session[] = sessionsData.map(d => ({
           id: d.id,
           taskName: d.task_name,
@@ -54,7 +72,7 @@ export function useSupabaseTimer(userId: string | undefined) {
           setActiveEntryId(active.id);
           setTimerState({
             isActive: true,
-            isPaused: false, // Supabase doesn't natively store pause state easily without more fields, keeping it simple
+            isPaused: false,
             startTime: active.startTime,
             pauseTime: null,
             totalPausedTime: 0,
@@ -62,12 +80,44 @@ export function useSupabaseTimer(userId: string | undefined) {
             category: active.category,
           });
         }
+      } catch (err: any) {
+        console.error('Error fetching sessions:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchData();
   }, [userId]);
+
+  const saveTaskTemplate = useCallback(async (name: string, category: Category) => {
+    if (!userId || !name) return;
+    try {
+      const { data, error } = await supabase
+        .from('saved_tasks')
+        .insert({ user_id: userId, name, category })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      setSavedTasks(prev => [...prev, { id: data.id, name: data.name, category: data.category as Category }]);
+    } catch (err: any) {
+      console.error('Error saving task template:', err);
+      setError(err.message);
+    }
+  }, [userId]);
+
+  const deleteSavedTask = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase.from('saved_tasks').delete().eq('id', id);
+      if (error) throw error;
+      setSavedTasks(prev => prev.filter(t => t.id !== id));
+    } catch (err: any) {
+      console.error('Error deleting saved task:', err);
+      setError(err.message);
+    }
+  }, []);
 
   // Timer tick
   useEffect(() => {
@@ -92,46 +142,59 @@ export function useSupabaseTimer(userId: string | undefined) {
   }, [timerState]);
 
   const startTimer = useCallback(async (taskName: string, category: Category) => {
-    if (!userId) return;
-
-    const startTime = new Date();
-    const { data, error } = await supabase
-      .from('time_entries')
-      .insert({
-        user_id: userId,
-        task_name: taskName || 'Untitled Task',
-        category,
-        start_time: startTime.toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error starting timer:', error);
+    console.log('Attempting to start timer:', { taskName, category, userId });
+    if (!userId) {
+      console.error('Cannot start timer: No userId found');
+      setError('User not authenticated');
       return;
     }
+    setError(null);
 
-    setActiveEntryId(data.id);
-    setTimerState({
-      isActive: true,
-      isPaused: false,
-      startTime: startTime.getTime(),
-      pauseTime: null,
-      totalPausedTime: 0,
-      taskName,
-      category,
-    });
+    try {
+      const startTime = new Date();
+      console.log('Inserting into Supabase...');
+      const { data, error } = await supabase
+        .from('time_entries')
+        .insert({
+          user_id: userId,
+          task_name: taskName || 'Untitled Task',
+          category,
+          start_time: startTime.toISOString(),
+        })
+        .select()
+        .single();
 
-    // Add to local list
-    const newSession: Session = {
-      id: data.id,
-      taskName: data.task_name,
-      category: data.category as Category,
-      startTime: startTime.getTime(),
-      endTime: null,
-      duration: 0,
-    };
-    setSessions(prev => [newSession, ...prev]);
+      if (error) {
+        console.error('Supabase insert error:', error);
+        throw error;
+      }
+
+      console.log('Timer started successfully:', data);
+      setActiveEntryId(data.id);
+      setTimerState({
+        isActive: true,
+        isPaused: false,
+        startTime: startTime.getTime(),
+        pauseTime: null,
+        totalPausedTime: 0,
+        taskName,
+        category,
+      });
+
+      // Add to local list
+      const newSession: Session = {
+        id: data.id,
+        taskName: data.task_name,
+        category: data.category as Category,
+        startTime: startTime.getTime(),
+        endTime: null,
+        duration: 0,
+      };
+      setSessions(prev => [newSession, ...prev]);
+    } catch (err: any) {
+      console.error('Error starting timer:', err);
+      setError(err.message);
+    }
   }, [userId]);
 
   const pauseTimer = useCallback(() => {
@@ -217,6 +280,10 @@ export function useSupabaseTimer(userId: string | undefined) {
     stopTimer,
     deleteSession,
     setTimerState,
+    savedTasks,
+    saveTaskTemplate,
+    deleteSavedTask,
     loading,
+    error,
   };
 }

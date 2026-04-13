@@ -3,22 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').replace(/['"]/g, '').trim();
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').replace(/['"]/g, '').trim();
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials missing. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables.');
-}
-
-// Ensure the URL is a valid format even if it's a placeholder to prevent createClient from throwing
-let finalUrl = supabaseUrl;
-if (finalUrl && !finalUrl.startsWith('http')) {
-  finalUrl = `https://${finalUrl}`;
-}
-
-const validUrl = finalUrl.startsWith('http') ? finalUrl : 'https://placeholder.supabase.co';
-
-export const supabase = createClient(
-  validUrl,
-  supabaseAnonKey || 'placeholder'
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
  * SQL Schema for Supabase:

@@ -3,15 +3,41 @@ import { supabase } from '../lib/supabase';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Timer, Sparkles, Mail, Lock, Loader2 } from 'lucide-react';
+import { Clock, Sparkles, Mail, Lock, Loader2 } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export function Auth() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [view, setView] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [isRecovery, setIsRecovery] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Check for errors or recovery mode in URL
+  React.useEffect(() => {
+    const hash = window.location.hash;
+    
+    if (hash) {
+      const params = new URLSearchParams(hash.substring(1));
+      
+      // Check for errors
+      if (hash.includes('error=')) {
+        const errorDescription = params.get('error_description');
+        if (errorDescription) {
+          setError(errorDescription.replace(/\+/g, ' '));
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }
+      
+      // Check for recovery mode
+      if (params.get('type') === 'recovery') {
+        setIsRecovery(true);
+        setSuccess('Please enter your new password below.');
+      }
+    }
+  }, []);
 
   const isConfigured = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -27,7 +53,23 @@ export function Auth() {
     setSuccess(null);
 
     try {
-      if (isSignUp) {
+      if (isRecovery) {
+        // Handle password update
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        setSuccess('Password updated successfully! You can now sign in.');
+        setIsRecovery(false);
+        setView('signin');
+        setPassword('');
+      } else if (view === 'forgot') {
+        // Handle password reset request
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+        if (error) throw error;
+        setSuccess('Password reset link sent! Check your inbox.');
+      } else if (view === 'signup') {
+        console.log('Attempting Sign Up for:', email);
         const { data, error } = await supabase.auth.signUp({ 
           email, 
           password,
@@ -35,7 +77,12 @@ export function Auth() {
             emailRedirectTo: window.location.origin
           }
         });
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('already registered')) {
+            throw new Error('This email is already registered. Try signing in instead.');
+          }
+          throw error;
+        }
         
         if (data?.user && data?.session) {
           setSuccess('Account created and signed in!');
@@ -43,15 +90,39 @@ export function Auth() {
           setSuccess('Check your email for the confirmation link!');
         }
       } else {
+        console.log('Attempting Sign In for:', email);
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            throw new Error('Account not found or incorrect password. Please sign up if you are new.');
+          }
+          if (error.message.includes('Email not confirmed')) {
+            throw new Error('Account not found or email not confirmed. Please sign up to create your account.');
+          }
+          throw error;
+        }
       }
     } catch (err: any) {
       console.error('Auth error:', err);
-      setError(err.message || 'An unexpected error occurred');
+      setError(err.message || 'An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const getTitle = () => {
+    if (isRecovery) return 'New Password';
+    if (view === 'signup') return 'Create Account';
+    if (view === 'forgot') return 'Reset Password';
+    return 'Welcome Back';
+  };
+
+  const getButtonText = () => {
+    if (loading) return <Loader2 className="w-6 h-6 animate-spin" />;
+    if (isRecovery) return 'Update password';
+    if (view === 'signup') return 'Sign up';
+    if (view === 'forgot') return 'Send reset link';
+    return 'Sign in';
   };
 
   return (
@@ -65,68 +136,75 @@ export function Auth() {
       <Card className="w-full max-w-md border-none bg-card/40 backdrop-blur-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] rounded-[2rem] relative z-10">
         <CardHeader className="space-y-4 text-center pt-12">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/10">
-              <Timer className="w-9 h-9 text-primary-foreground" />
-            </div>
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="w-20 h-20 flex items-center justify-center relative group"
+            >
+              <img 
+                src="/logo_tracker_new2.svg" 
+                alt="Logo" 
+                className="w-16 h-16 relative z-10" 
+                referrerPolicy="no-referrer"
+              />
+            </motion.div>
           </div>
           <CardTitle className="font-heading text-4xl font-light tracking-tight">
-            {isSignUp ? 'Create Account' : 'Welcome Back'}
+            {getTitle()}
           </CardTitle>
           <CardDescription className="text-muted-foreground/60 uppercase tracking-[0.2em] text-[10px] font-bold">
             Chronos Time Tracker
           </CardDescription>
         </CardHeader>
         <CardContent className="p-8 pt-4">
-          {!isConfigured && (
-            <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-500 text-[10px] font-bold uppercase tracking-widest text-center">
-              Supabase credentials missing in Settings &gt; Secrets
-            </div>
-          )}
-          
           <form onSubmit={handleAuth} className="space-y-6">
             <div className="space-y-4">
-              <div className="relative">
-                <Input
-                  type="email"
-                  placeholder="Email Address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="h-14 bg-secondary/30 border-border/20 focus-visible:ring-[var(--brand-pink)]/20 pl-11 rounded-2xl font-medium"
-                  required
-                  disabled={!isConfigured}
-                />
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
-              </div>
-              <div className="relative">
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-14 bg-secondary/30 border-border/20 focus-visible:ring-[var(--brand-pink)]/20 pl-11 rounded-2xl font-medium"
-                  required
-                  disabled={!isConfigured}
-                />
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
-              </div>
+              {!isRecovery && (
+                <div className="relative">
+                  <Input
+                    type="email"
+                    placeholder="Email Address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-14 bg-secondary/30 border-border/20 focus-visible:ring-[var(--brand-pink)]/20 pl-11 rounded-2xl font-medium"
+                    required
+                  />
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                </div>
+              )}
+              
+              {(view !== 'forgot' || isRecovery) && (
+                <div className="relative">
+                  <Input
+                    type="password"
+                    placeholder={isRecovery ? "New Password" : "Password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="h-14 bg-secondary/30 border-border/20 focus-visible:ring-[var(--brand-pink)]/20 pl-11 rounded-2xl font-medium"
+                    required
+                  />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                </div>
+              )}
             </div>
 
+            {view === 'signin' && !isRecovery && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setView('forgot')}
+                  className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-[var(--brand-pink)] hover:underline transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
+
             {error && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <p className="text-destructive text-xs font-medium text-center bg-destructive/10 py-3 px-4 rounded-xl border border-destructive/20">
                   {error}
                 </p>
-                {error.includes('Failed to fetch') && (
-                  <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-xl space-y-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500/80 text-center">Troubleshooting</p>
-                    <ul className="text-[9px] text-muted-foreground/80 space-y-1 list-disc pl-4">
-                      <li>Check if <span className="text-foreground font-mono">VITE_SUPABASE_URL</span> is correct in Secrets.</li>
-                      <li>Ensure the URL starts with <span className="text-foreground font-mono">https://</span></li>
-                      <li>Check your internet connection or if Supabase is down.</li>
-                      <li>Disable any ad-blockers that might block API calls.</li>
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
 
@@ -139,27 +217,41 @@ export function Auth() {
             <Button
               type="submit"
               disabled={loading || !isConfigured}
-              className="w-full h-16 text-lg font-bold uppercase tracking-widest bg-[var(--brand-pink)] text-white hover:bg-[var(--brand-pink)]/90 rounded-2xl transition-all shadow-xl shadow-[var(--brand-pink)]/20 active:scale-[0.98]"
+              className="w-full h-16 text-lg font-bold tracking-tight bg-[var(--brand-pink)] text-white hover:bg-[var(--brand-pink)]/90 rounded-2xl transition-all shadow-xl shadow-[var(--brand-pink)]/20 active:scale-[0.98]"
             >
-              {loading ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
-              ) : (
-                isSignUp ? 'Sign Up' : 'Sign In'
-              )}
+              {getButtonText()}
             </Button>
 
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSignUp(!isSignUp);
-                  setError(null);
-                  setSuccess(null);
-                }}
-                className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-[var(--brand-pink)] transition-colors"
-              >
-                {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-              </button>
+            <div className="text-center space-y-4">
+              {view === 'forgot' ? (
+                <button
+                  type="button"
+                  onClick={() => setView('signin')}
+                  className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-[var(--brand-pink)] hover:underline transition-colors"
+                >
+                  Back to Sign In
+                </button>
+              ) : !isRecovery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setView(view === 'signup' ? 'signin' : 'signup');
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-all group"
+                >
+                  {view === 'signup' ? (
+                    <>
+                      Already have an account? <span className="text-[var(--brand-pink)] group-hover:underline">Sign In</span>
+                    </>
+                  ) : (
+                    <>
+                      Don't have an account? <span className="text-[var(--brand-pink)] group-hover:underline">Sign Up</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </form>
         </CardContent>

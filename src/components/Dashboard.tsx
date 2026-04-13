@@ -17,17 +17,32 @@ import { format, startOfToday, startOfWeek, startOfMonth, isWithinInterval, endO
 
 interface DashboardProps {
   sessions: Session[];
+  activeElapsed?: number;
+  activeCategory?: Category;
 }
 
-export function Dashboard({ sessions }: DashboardProps) {
+export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: DashboardProps) {
   const today = startOfToday();
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const monthStart = startOfMonth(new Date());
 
   const calculateTotal = (interval: { start: Date; end: Date }) => {
-    return sessions
-      .filter(s => isWithinInterval(new Date(s.startTime), interval))
+    let total = sessions
+      .filter(s => {
+        const sessionDate = new Date(s.startTime);
+        return sessionDate >= interval.start && sessionDate <= interval.end;
+      })
       .reduce((acc, s) => acc + s.duration, 0);
+    
+    // Include active session if it falls within the interval
+    if (activeElapsed > 0 && activeCategory) {
+      const now = new Date();
+      if (now >= interval.start && now <= interval.end) {
+        total += activeElapsed;
+      }
+    }
+    
+    return total;
   };
 
   const formatDuration = (seconds: number) => {
@@ -43,20 +58,28 @@ export function Dashboard({ sessions }: DashboardProps) {
     { label: 'This Month', value: formatDuration(calculateTotal({ start: monthStart, end: endOfMonth(new Date()) })), icon: CalendarIcon },
   ];
 
-  const categoryData = CATEGORIES.map(cat => ({
-    name: cat.value,
-    value: Math.round(sessions
+  const categoryData = CATEGORIES.map(cat => {
+    let value = sessions
       .filter(s => s.category === cat.value)
-      .reduce((acc, s) => acc + s.duration, 0) / 60), // in minutes
-    color: cat.color
-  })).filter(d => d.value > 0);
+      .reduce((acc, s) => acc + s.duration, 0);
+    
+    if (activeCategory === cat.value) {
+      value += activeElapsed;
+    }
+
+    return {
+      name: cat.value,
+      value: Math.round(value / 60), // in minutes
+      color: cat.color
+    };
+  }).filter(d => d.value > 0);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-card/90 backdrop-blur-md border border-border/50 p-4 rounded-xl shadow-2xl">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">{payload[0].payload.name}</p>
-          <p className="text-xl font-heading font-light">{payload[0].value} <span className="text-xs font-sans font-medium text-muted-foreground">min</span></p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-foreground/60 mb-1">{payload[0].payload.name}</p>
+          <p className="text-xl font-heading font-light">{payload[0].value} <span className="text-xs font-sans font-medium text-foreground/40">min</span></p>
         </div>
       );
     }
@@ -70,7 +93,7 @@ export function Dashboard({ sessions }: DashboardProps) {
           <Card key={stat.label} className="border-none bg-card/30 backdrop-blur-sm group hover:bg-card/40 transition-all duration-500 rounded-2xl">
             <CardContent className="p-8">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{stat.label}</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/60">{stat.label}</p>
                 <stat.icon className="w-4 h-4 text-primary/20 group-hover:text-primary/40 transition-colors" />
               </div>
               <p className="text-4xl font-heading font-light tracking-tight">{stat.value}</p>
@@ -95,7 +118,7 @@ export function Dashboard({ sessions }: DashboardProps) {
                     axisLine={false} 
                     tickLine={false} 
                     width={100}
-                    tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}
+                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}
                   />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
                   <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={32}>
@@ -106,7 +129,7 @@ export function Dashboard({ sessions }: DashboardProps) {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground/40 space-y-4">
+              <div className="h-full flex flex-col items-center justify-center text-foreground/30 space-y-4">
                 <div className="w-12 h-12 rounded-full border border-dashed border-border/40 flex items-center justify-center">
                   <Clock className="w-5 h-5 opacity-20" />
                 </div>
@@ -124,11 +147,11 @@ export function Dashboard({ sessions }: DashboardProps) {
           <div className="space-y-4 relative z-10">
             <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-[var(--brand-pink)]">Insights</div>
             <h3 className="font-heading text-3xl font-light leading-tight">Your focus is increasing.</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">You've spent 12% more time on <span className="text-foreground font-medium">Learning</span> this week compared to last.</p>
+            <p className="text-sm text-foreground/60 leading-relaxed">You've spent 12% more time on <span className="text-foreground font-medium">Learning</span> this week compared to last.</p>
           </div>
 
           <div className="pt-8 border-t border-[var(--brand-pink)]/10 relative z-10">
-            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-foreground/40">
               <span>Next Milestone</span>
               <span>80%</span>
             </div>

@@ -28,7 +28,7 @@ export function HistoryList({ sessions, onDelete }: HistoryListProps) {
       <div className="flex items-center justify-between px-2">
         <div className="space-y-1">
           <h3 className="font-heading text-2xl font-light tracking-tight">Activity Log</h3>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Historical Data</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/60">Historical Data</p>
         </div>
         <Badge variant="secondary" className="bg-secondary/30 text-[10px] font-bold uppercase tracking-widest px-3 py-1 border-none">
           {sessions.length} Sessions
@@ -46,30 +46,35 @@ export function HistoryList({ sessions, onDelete }: HistoryListProps) {
                 className="group flex flex-col md:flex-row md:items-center justify-between p-6 bg-card/20 hover:bg-card/40 border border-border/20 rounded-2xl transition-all duration-300"
               >
                 <div className="flex items-start gap-6">
-                  <div className="mt-1 w-10 h-10 rounded-xl bg-secondary/30 flex items-center justify-center text-muted-foreground group-hover:text-primary transition-colors">
+                  <div className="mt-1 w-10 h-10 rounded-xl bg-secondary/30 flex items-center justify-center text-foreground/60 group-hover:text-primary transition-colors">
                     <Clock className="w-5 h-5" />
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
-                      <span className="font-heading text-xl font-light tracking-tight">{session.taskName}</span>
+                      <span className="font-heading text-2xl font-light tracking-tight text-primary">
+                        {session.category}
+                      </span>
                       <div 
                         className="w-1.5 h-1.5 rounded-full" 
                         style={{ backgroundColor: CATEGORIES.find(c => c.value === session.category)?.color }} 
                       />
                     </div>
                     
-                    <div className="flex items-center gap-6 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/50">
-                      <div className="flex items-center gap-2">
-                        <CalendarIcon className="w-3 h-3" />
-                        {format(new Date(session.startTime), 'MMM d, yyyy')}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3 h-3" />
-                        {format(new Date(session.startTime), 'HH:mm')} — {format(new Date(session.endTime), 'HH:mm')}
-                      </div>
-                      <div className="px-2 py-0.5 bg-secondary/50 rounded text-[9px]">
-                        {session.category}
+                    <div className="flex flex-col gap-2">
+                      <p className="text-sm font-medium text-foreground/80">
+                        {session.taskName || 'Untitled Session'}
+                      </p>
+                      
+                      <div className="flex items-center gap-6 text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/40">
+                        <div className="flex items-center gap-2">
+                          <CalendarIcon className="w-3 h-3" />
+                          {format(new Date(session.startTime), 'MMM d, yyyy')}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3 h-3" />
+                          {format(new Date(session.startTime), 'HH:mm')} — {format(new Date(session.endTime), 'HH:mm')}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -83,7 +88,7 @@ export function HistoryList({ sessions, onDelete }: HistoryListProps) {
                     variant="ghost"
                     size="icon"
                     onClick={() => onDelete(session.id)}
-                    className="h-10 w-10 text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all"
+                    className="h-10 w-10 text-foreground/30 hover:text-destructive hover:bg-destructive/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -91,7 +96,7 @@ export function HistoryList({ sessions, onDelete }: HistoryListProps) {
               </motion.div>
             ))
           ) : (
-            <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/30 space-y-6">
+            <div className="flex flex-col items-center justify-center py-24 text-foreground/30 space-y-6">
               <div className="w-16 h-16 rounded-full border border-dashed border-border/40 flex items-center justify-center">
                 <History className="w-6 h-6 opacity-20" />
               </div>

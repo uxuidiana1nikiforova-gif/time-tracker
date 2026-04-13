@@ -73,19 +73,17 @@
     --brand-pink: oklch(0.75 0.12 340);
 }
 
-
-
-/* Dark mode is default */
-
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
     @apply bg-background text-foreground;
-    }
+  }
   html {
     @apply font-sans;
-    }
+  }
+  button, [role="button"], select, input[type="submit"], input[type="button"], a, .cursor-pointer {
+    @apply cursor-pointer;
+  }
 }
