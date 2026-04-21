@@ -123,6 +123,37 @@ export function useSupabaseTimer(userId: string | undefined) {
     }
   }, [timerState, activeEntryId, userId, LOCAL_STORAGE_KEY]);
 
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (timerState.isActive && activeEntryId && userId) {
+        const now = Date.now();
+        const durationSinceStart = Math.floor((now - timerState.startTime! - timerState.totalPausedTime) / 1000);
+        const finalDuration = timerState.isPaused ? elapsed : durationSinceStart;
+        const endTime = new Date(now).toISOString();
+
+        // Save to pending syncs immediately
+        const key = `chronos_pending_sync_${userId}`;
+        const pendingSyncs = JSON.parse(localStorage.getItem(key) || '[]');
+        
+        // Avoid duplicate syncs for the same ID
+        if (!pendingSyncs.find((s: any) => s.id === activeEntryId)) {
+          pendingSyncs.push({
+            id: activeEntryId,
+            end_time: endTime,
+            duration: finalDuration,
+          });
+          localStorage.setItem(key, JSON.stringify(pendingSyncs));
+        }
+        
+        // Clear active session so it doesn't resume on next load
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [timerState, activeEntryId, userId, elapsed, LOCAL_STORAGE_KEY]);
+
   const saveTaskTemplate = useCallback(async (name: string, category: Category) => {
     if (!userId || !name) return;
     try {

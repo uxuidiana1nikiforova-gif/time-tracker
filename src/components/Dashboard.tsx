@@ -65,8 +65,28 @@ export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: Dashb
   const totalWeek = calculateTotal({ start: weekStart, end: endOfWeek(now, { weekStartsOn: 1 }) });
   const totalMonth = calculateTotal({ start: monthStart, end: endOfMonth(now) });
 
-  const daysThisWeek = Math.max(1, differenceInCalendarDays(now, weekStart) + 1);
-  const daysThisMonth = Math.max(1, differenceInCalendarDays(now, monthStart) + 1);
+  const getActiveDaysCount = (interval: { start: Date; end: Date }) => {
+    const activeDays = new Set<string>();
+    
+    sessions.forEach(s => {
+      const sessionDate = new Date(s.startTime);
+      if (sessionDate >= interval.start && sessionDate <= interval.end) {
+        activeDays.add(format(sessionDate, 'yyyy-MM-dd'));
+      }
+    });
+
+    // Count today as active if there is an ongoing session
+    if (activeElapsed > 0 && activeCategory) {
+      if (now >= interval.start && now <= interval.end) {
+        activeDays.add(format(now, 'yyyy-MM-dd'));
+      }
+    }
+
+    return Math.max(1, activeDays.size);
+  };
+
+  const activeDaysWeek = getActiveDaysCount({ start: weekStart, end: endOfWeek(now, { weekStartsOn: 1 }) });
+  const activeDaysMonth = getActiveDaysCount({ start: monthStart, end: endOfMonth(now) });
 
   const stats = [
     { 
@@ -77,13 +97,13 @@ export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: Dashb
     { 
       label: 'This Week', 
       value: formatDuration(totalWeek), 
-      average: formatDuration(totalWeek / daysThisWeek),
+      average: formatDuration(totalWeek / activeDaysWeek),
       icon: CalendarIcon 
     },
     { 
       label: 'This Month', 
       value: formatDuration(totalMonth), 
-      average: formatDuration(totalMonth / daysThisMonth),
+      average: formatDuration(totalMonth / activeDaysMonth),
       icon: CalendarIcon 
     },
   ];
