@@ -19,6 +19,8 @@ export function useSupabaseTimer(userId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const LOCAL_STORAGE_KEY = `chronos_active_session_${userId}`;
+
   // Fetch initial data
   useEffect(() => {
     if (!userId) return;
@@ -68,6 +70,24 @@ export function useSupabaseTimer(userId: string | undefined) {
 
         // Check for active timer (end_time is null)
         const active = formattedSessions.find(s => s.endTime === null);
+        
+        // Try to recover from localStorage first for more accurate state (like paused time)
+        const savedSession = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedSession) {
+          try {
+            const parsed = JSON.parse(savedSession);
+            // Only use localStorage if it matches the active session in Supabase
+            if (active && parsed.activeEntryId === active.id) {
+              setActiveEntryId(parsed.activeEntryId);
+              setTimerState(parsed.timerState);
+              return; // Successfully recovered
+            }
+          } catch (e) {
+            console.error('Error parsing saved session:', e);
+          }
+        }
+
+        // Fallback to Supabase active session if localStorage is missing or mismatched
         if (active) {
           setActiveEntryId(active.id);
           setTimerState({
@@ -89,7 +109,19 @@ export function useSupabaseTimer(userId: string | undefined) {
     };
 
     fetchData();
-  }, [userId]);
+  }, [userId, LOCAL_STORAGE_KEY]);
+
+  // Persist timer state to localStorage whenever it changes
+  useEffect(() => {
+    if (userId && timerState.isActive && activeEntryId) {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({
+        timerState,
+        activeEntryId
+      }));
+    } else if (userId && !timerState.isActive) {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
+  }, [timerState, activeEntryId, userId, LOCAL_STORAGE_KEY]);
 
   const saveTaskTemplate = useCallback(async (name: string, category: Category) => {
     if (!userId || !name) return;
@@ -223,22 +255,11 @@ export function useSupabaseTimer(userId: string | undefined) {
 
     const endTime = new Date();
     const duration = elapsed;
+    const entryId = activeEntryId;
 
-    const { error } = await supabase
-      .from('time_entries')
-      .update({
-        end_time: endTime.toISOString(),
-        duration,
-      })
-      .eq('id', activeEntryId);
-
-    if (error) {
-      console.error('Error stopping timer:', error);
-      return;
-    }
-
+    // Optimistically update local state
     setSessions(prev => prev.map(s => 
-      s.id === activeEntryId 
+      s.id === entryId 
         ? { ...s, endTime: endTime.getTime(), duration } 
         : s
     ));
@@ -254,7 +275,70 @@ export function useSupabaseTimer(userId: string | undefined) {
     });
     setActiveEntryId(null);
     setElapsed(0);
-  }, [activeEntryId, userId, elapsed]);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+
+    try {
+      const { error } = await supabase
+        .from('time_entries')
+        .update({
+          end_time: endTime.toISOString(),
+          duration,
+        })
+        .eq('id', entryId);
+
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('Error stopping timer (will retry):', err);
+      // Save to pending syncs if it failed
+      const pendingSyncs = JSON.parse(localStorage.getItem(`chronos_pending_sync_${userId}`) || '[]');
+      pendingSyncs.push({
+        id: entryId,
+        end_time: endTime.toISOString(),
+        duration,
+      });
+      localStorage.setItem(`chronos_pending_sync_${userId}`, JSON.stringify(pendingSyncs));
+    }
+  }, [activeEntryId, userId, elapsed, LOCAL_STORAGE_KEY]);
+
+  // Sync pending sessions
+  const syncPendingSessions = useCallback(async () => {
+    if (!userId) return;
+    const key = `chronos_pending_sync_${userId}`;
+    const pendingSyncs = JSON.parse(localStorage.getItem(key) || '[]');
+    if (pendingSyncs.length === 0) return;
+
+    const remainingSyncs = [];
+    for (const sync of pendingSyncs) {
+      try {
+        const { error } = await supabase
+          .from('time_entries')
+          .update({
+            end_time: sync.end_time,
+            duration: sync.duration,
+          })
+          .eq('id', sync.id);
+        
+        if (error) throw error;
+      } catch (err) {
+        console.error('Failed to sync pending session:', sync.id, err);
+        remainingSyncs.push(sync);
+      }
+    }
+
+    if (remainingSyncs.length > 0) {
+      localStorage.setItem(key, JSON.stringify(remainingSyncs));
+    } else {
+      localStorage.removeItem(key);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+      syncPendingSessions();
+      window.addEventListener('online', syncPendingSessions);
+      return () => window.removeEventListener('online', syncPendingSessions);
+    }
+  }, [userId, syncPendingSessions]);
 
   const deleteSession = useCallback(async (id: string) => {
     const { error } = await supabase

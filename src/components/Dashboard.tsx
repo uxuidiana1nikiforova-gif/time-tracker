@@ -13,7 +13,17 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
-import { format, startOfToday, startOfWeek, startOfMonth, isWithinInterval, endOfToday, endOfWeek, endOfMonth } from 'date-fns';
+import { 
+  format, 
+  startOfToday, 
+  startOfWeek, 
+  startOfMonth, 
+  isWithinInterval, 
+  endOfToday, 
+  endOfWeek, 
+  endOfMonth,
+  differenceInCalendarDays
+} from 'date-fns';
 
 interface DashboardProps {
   sessions: Session[];
@@ -22,9 +32,10 @@ interface DashboardProps {
 }
 
 export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: DashboardProps) {
+  const now = new Date();
   const today = startOfToday();
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const monthStart = startOfMonth(new Date());
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const monthStart = startOfMonth(now);
 
   const calculateTotal = (interval: { start: Date; end: Date }) => {
     let total = sessions
@@ -36,7 +47,6 @@ export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: Dashb
     
     // Include active session if it falls within the interval
     if (activeElapsed > 0 && activeCategory) {
-      const now = new Date();
       if (now >= interval.start && now <= interval.end) {
         total += activeElapsed;
       }
@@ -52,10 +62,30 @@ export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: Dashb
     return `${m}m`;
   };
 
+  const totalWeek = calculateTotal({ start: weekStart, end: endOfWeek(now, { weekStartsOn: 1 }) });
+  const totalMonth = calculateTotal({ start: monthStart, end: endOfMonth(now) });
+
+  const daysThisWeek = Math.max(1, differenceInCalendarDays(now, weekStart) + 1);
+  const daysThisMonth = Math.max(1, differenceInCalendarDays(now, monthStart) + 1);
+
   const stats = [
-    { label: 'Today', value: formatDuration(calculateTotal({ start: today, end: endOfToday() })), icon: Clock },
-    { label: 'This Week', value: formatDuration(calculateTotal({ start: weekStart, end: endOfWeek(new Date(), { weekStartsOn: 1 }) })), icon: CalendarIcon },
-    { label: 'This Month', value: formatDuration(calculateTotal({ start: monthStart, end: endOfMonth(new Date()) })), icon: CalendarIcon },
+    { 
+      label: 'Today', 
+      value: formatDuration(calculateTotal({ start: today, end: endOfToday() })), 
+      icon: Clock 
+    },
+    { 
+      label: 'This Week', 
+      value: formatDuration(totalWeek), 
+      average: formatDuration(totalWeek / daysThisWeek),
+      icon: CalendarIcon 
+    },
+    { 
+      label: 'This Month', 
+      value: formatDuration(totalMonth), 
+      average: formatDuration(totalMonth / daysThisMonth),
+      icon: CalendarIcon 
+    },
   ];
 
   const categoryData = CATEGORIES.map(cat => {
@@ -96,7 +126,15 @@ export function Dashboard({ sessions, activeElapsed = 0, activeCategory }: Dashb
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/60">{stat.label}</p>
                 <stat.icon className="w-4 h-4 text-primary/20 group-hover:text-primary/40 transition-colors" />
               </div>
-              <p className="text-4xl font-heading font-light tracking-tight">{stat.value}</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-4xl font-heading font-light tracking-tight">{stat.value}</p>
+                {stat.average && (
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-primary/40">Avg</span>
+                    <span className="text-xs font-medium text-foreground/40">{stat.average}</span>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}
